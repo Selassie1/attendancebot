@@ -477,8 +477,7 @@ def keyboard_command(update: Update, context: CallbackContext) -> None:
 # ============================================================================
 # ADMIN CONVERSATION HANDLER FUNCTIONS
 # ============================================================================
-# These functions implement the interactive flows for admin operations.
-# Each flow follows a step-by-step conversational pattern.
+
 
 def cancel_admin_conversation(update: Update, context: CallbackContext) -> int:
     """
@@ -961,9 +960,7 @@ def main() -> None:
     # ============================================================================
     # CONVERSATION HANDLERS - INTERACTIVE ADMIN FLOWS
     # ============================================================================
-    # These conversation handlers enable interactive admin operations through a
-    # step-by-step process rather than requiring manual command input.
-    # They must be registered first to have higher priority than regular handlers.
+
     
     # User deletion conversation - Allows admins to delete users via an interactive flow
     # Flow: Show user list -> Admin enters user ID -> Confirmation screen -> Delete user
@@ -1010,7 +1007,7 @@ def main() -> None:
         allow_reentry=True
     )
     
-    # Register the conversation handlers (before the other handlers for priority)
+    # Register conversation handlers (before the other handlers for priority)
     dispatcher.add_handler(delete_user_conv_handler)
     dispatcher.add_handler(clear_attendance_conv_handler)
     dispatcher.add_handler(user_details_conv_handler)
