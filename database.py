@@ -78,6 +78,9 @@ def check_out(user_id, timestamp=None):
         check_in_time = existing["check_in"]
         duration = (timestamp - check_in_time).total_seconds() / 3600  # hours
         
+        # Get first check-in time (for reporting)
+        first_check_in = existing.get("first_check_in", check_in_time)
+        
         # Handle multiple check-ins - calculate total duration for the day
         total_duration = duration
         if "check_ins" in existing and len(existing["check_ins"]) > 0:
@@ -86,6 +89,13 @@ def check_out(user_id, timestamp=None):
                 for checkout in existing["check_outs"]:
                     if "duration" in checkout:
                         total_duration += checkout["duration"]
+        
+        # For multiple sessions, calculate total span from first check-in to last check-out
+        has_multiple_sessions = False
+        if "check_ins" in existing and len(existing.get("check_ins", [])) > 1:
+            has_multiple_sessions = True
+            # Calculate total span from first check-in to now
+            total_span = (timestamp - first_check_in).total_seconds() / 3600  # hours
         
         # Record this check-out
         check_outs = existing.get("check_outs", [])
@@ -108,7 +118,13 @@ def check_out(user_id, timestamp=None):
             }
         )
         
-        return True, f"Check-out successful. Session duration: {round(duration, 2)} hours. Total today: {round(total_duration, 2)} hours"
+        # Prepare the success message, including info about first check-in for multiple sessions
+        if has_multiple_sessions:
+            first_time_str = first_check_in.strftime("%H:%M:%S")
+            last_time_str = timestamp.strftime("%H:%M:%S")
+            return True, f"Check-out successful. Session duration: {round(duration, 2)} hours. Total today: {round(total_duration, 2)} hours. (First check-in: {first_time_str}, Last check-out: {last_time_str})"
+        else:
+            return True, f"Check-out successful. Session duration: {round(duration, 2)} hours. Total today: {round(total_duration, 2)} hours"
     except Exception as e:
         logging.error(f"Error checking out: {e}")
         return False, f"Error: {str(e)}"
@@ -432,8 +448,20 @@ def allow_multiple_check_ins(user_id, timestamp=None):
                 "created_at": timestamp
             })
             
+            # Get the first check-in time (for history)
+            first_check_in = None
+            if check_ins:
+                # Sort check-ins by time
+                sorted_check_ins = sorted(check_ins, key=lambda x: x["time"])
+                if sorted_check_ins:
+                    first_check_in = sorted_check_ins[0]["time"]
+            
+            if not first_check_in:
+                first_check_in = timestamp
+            
             # Reset checkout if it exists - we're starting a new session
             update_data = {
+                "first_check_in": first_check_in,  # First check-in of the day
                 "check_in": timestamp,  # Most recent check-in
                 "check_ins": check_ins,
                 "updated_at": timestamp
@@ -451,16 +479,13 @@ def allow_multiple_check_ins(user_id, timestamp=None):
                             break
                     
                     if last_checkin:
-                        duration = (existing["check_out"] - last_checkin).total_seconds() / 3600
+                        session_duration = (existing["check_out"] - last_checkin).total_seconds() / 3600
                         check_outs.append({
                             "time": existing["check_out"],
-                            "duration": round(duration, 2),
-                            "created_at": existing["check_out"]
+                            "duration": round(session_duration, 2),
+                            "created_at": existing.get("updated_at", existing["check_out"])
                         })
-                
-                update_data["check_outs"] = check_outs
-                # Remove current check_out since we're starting a new session
-                update_data["check_out"] = None
+                        update_data["check_outs"] = check_outs
             
             # Update the record
             attendance_collection.update_one(
@@ -468,25 +493,23 @@ def allow_multiple_check_ins(user_id, timestamp=None):
                 {"$set": update_data}
             )
             
-            if len(check_ins) > 1:
-                return True, f"Check-in successful (session #{len(check_ins)})"
-            else:
-                return True, "Check-in successful"
+            return True, "Check-in successful (additional session)"
         else:
-            # No existing record, create a new one
+            # First check-in of the day
             attendance_collection.insert_one({
                 "user_id": user_id,
                 "date": today,
+                "first_check_in": timestamp,  # Add first check-in field
                 "check_in": timestamp,
                 "check_ins": [{
                     "time": timestamp,
                     "created_at": timestamp
                 }],
-                "check_outs": [],
                 "created_at": timestamp,
                 "updated_at": timestamp
             })
-            return True, "First check-in of the day"
+            
+            return True, "Check-in successful"
     except Exception as e:
-        logging.error(f"Error in multiple check-in: {e}")
+        logging.error(f"Error checking in: {e}")
         return False, f"Error: {str(e)}" 

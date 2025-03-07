@@ -6,6 +6,7 @@ from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, ParseMo
 from telegram.ext import CallbackContext, CallbackQueryHandler
 import database
 import config
+import re
 
 # Constants for callback data
 CALENDAR_CALLBACK = "cal"
@@ -127,17 +128,25 @@ def check_out_command(update: Update, context: CallbackContext) -> None:
     # Format the message
     if success:
         # Extract session duration and total duration from the message
-        import re
-        session_match = re.search(r"Session duration: ([\d.]+) hours", message)
-        total_match = re.search(r"Total today: ([\d.]+) hours", message)
+        session_duration_match = re.search(r"Session duration: ([\d.]+) hours", message)
+        total_duration_match = re.search(r"Total today: ([\d.]+) hours", message)
         
-        session_duration = session_match.group(1) if session_match else "unknown"
-        total_duration = total_match.group(1) if total_match else session_duration
+        session_duration = session_duration_match.group(1) if session_duration_match else "N/A"
+        total_duration = total_duration_match.group(1) if total_duration_match else "N/A"
         
-        formatted_message = f"🚪 *{user_name}*, you have successfully checked out!\n\n"
-        formatted_message += f"_Time: {datetime.now().strftime('%H:%M:%S')}_\n"
+        # Check for first check-in and last check-out time info for multiple sessions
+        first_last_match = re.search(r"\(First check-in: ([\d:]+), Last check-out: ([\d:]+)\)", message)
+        first_checkin = first_last_match.group(1) if first_last_match else None
+        last_checkout = first_last_match.group(2) if first_last_match else None
+        
+        # Build the message
+        formatted_message = f"🚪 *{user_name}*, you've checked out at {datetime.now().strftime('%H:%M:%S')}!\n\n"
         formatted_message += f"_Session duration: {session_duration} hours_\n"
         formatted_message += f"_Total today: {total_duration} hours_"
+        
+        # Add first check-in and last check-out info if available
+        if first_checkin and last_checkout:
+            formatted_message += f"\n\nFirst check-in: {first_checkin}\nLast check-out: {last_checkout}"
         
         # Notify admins
         admin_users = database.get_admin_users()
@@ -145,7 +154,7 @@ def check_out_command(update: Update, context: CallbackContext) -> None:
             for admin in admin_users:
                 if admin["user_id"] != user_id:  # Don't notify the user if they're an admin
                     try:
-                        admin_message = f"👤 *{database.get_user_name(user_id)}* has checked out at _{datetime.now().strftime('%H:%M:%S')}_\n"
+                        admin_message = f"👤 *{database.get_user_name(user_id)}* has checked out at _{datetime.now().strftime('%H:%M:%S')}_.\n"
                         admin_message += f"_Session: {session_duration} hrs | Total: {total_duration} hrs_"
                         context.bot.send_message(
                             chat_id=admin["user_id"],
@@ -543,17 +552,25 @@ def handle_history_callback(update: Update, context: CallbackContext) -> None:
         # Format the message
         if success:
             # Extract session duration and total duration from the message
-            import re
-            session_match = re.search(r"Session duration: ([\d.]+) hours", message)
-            total_match = re.search(r"Total today: ([\d.]+) hours", message)
+            session_duration_match = re.search(r"Session duration: ([\d.]+) hours", message)
+            total_duration_match = re.search(r"Total today: ([\d.]+) hours", message)
             
-            session_duration = session_match.group(1) if session_match else "unknown"
-            total_duration = total_match.group(1) if total_match else session_duration
+            session_duration = session_duration_match.group(1) if session_duration_match else "N/A"
+            total_duration = total_duration_match.group(1) if total_duration_match else "N/A"
             
-            formatted_message = f"🚪 *{user_name}*, you have successfully checked out!\n\n"
-            formatted_message += f"_Time: {datetime.now().strftime('%H:%M:%S')}_\n"
+            # Check for first check-in and last check-out time info for multiple sessions
+            first_last_match = re.search(r"\(First check-in: ([\d:]+), Last check-out: ([\d:]+)\)", message)
+            first_checkin = first_last_match.group(1) if first_last_match else None
+            last_checkout = first_last_match.group(2) if first_last_match else None
+            
+            # Build the message
+            formatted_message = f"🚪 *{user_name}*, you've checked out at {datetime.now().strftime('%H:%M:%S')}!\n\n"
             formatted_message += f"_Session duration: {session_duration} hours_\n"
             formatted_message += f"_Total today: {total_duration} hours_"
+            
+            # Add first check-in and last check-out info if available
+            if first_checkin and last_checkout:
+                formatted_message += f"\n\nFirst check-in: {first_checkin}\nLast check-out: {last_checkout}"
             
             # Notify admins
             admin_users = database.get_admin_users()
@@ -561,7 +578,7 @@ def handle_history_callback(update: Update, context: CallbackContext) -> None:
                 for admin in admin_users:
                     if admin["user_id"] != user_id:  # Don't notify the user if they're an admin
                         try:
-                            admin_message = f"👤 *{database.get_user_name(user_id)}* has checked out at _{datetime.now().strftime('%H:%M:%S')}_\n"
+                            admin_message = f"👤 *{database.get_user_name(user_id)}* has checked out at _{datetime.now().strftime('%H:%M:%S')}_.\n"
                             admin_message += f"_Session: {session_duration} hrs | Total: {total_duration} hrs_"
                             context.bot.send_message(
                                 chat_id=admin["user_id"],

@@ -151,7 +151,7 @@ def handle_callback_query(update: Update, context: CallbackContext) -> None:
     
     # Check if this is a photo message - can't edit text in photo messages
     if query.message and query.message.photo:
-        # For photo messages, we need to send a new message instead of editing
+        # For photo messages, send a new message instead of editing
         query.answer("Command received")
         
         # Handle different callback types 
@@ -474,19 +474,32 @@ def keyboard_command(update: Update, context: CallbackContext) -> None:
             parse_mode=ParseMode.MARKDOWN
         )
 
-# Conversation handlers for admin operations
+# ============================================================================
+# ADMIN CONVERSATION HANDLER FUNCTIONS
+# ============================================================================
+# These functions implement the interactive flows for admin operations.
+# Each flow follows a step-by-step conversational pattern.
 
 def cancel_admin_conversation(update: Update, context: CallbackContext) -> int:
-    """Cancel the admin conversation and return to the admin menu."""
+    """
+    Cancel an ongoing admin conversation and return to the admin menu.
+    Triggered when a user types /cancel during any conversation flow.
+    """
     update.message.reply_text(
         "Operation cancelled. Returning to admin menu.",
         reply_markup=get_admin_menu_keyboard()
     )
     return ConversationHandler.END
 
-# Delete user conversation handlers
+# ----------------------------------------
+# Delete User Conversation Functions
+# ----------------------------------------
+
 def start_delete_user(update: Update, context: CallbackContext) -> int:
-    """Start the delete user conversation."""
+    """
+    Start the delete user conversation flow.
+    Shows a list of all users to help the admin choose a user ID.
+    """
     query = update.callback_query
     query.answer()
     
@@ -494,6 +507,7 @@ def start_delete_user(update: Update, context: CallbackContext) -> int:
     users = database.get_all_users()
     user_list = "👥 Available Users:\n\n"
     
+    # Format each user's details
     for user in users:
         name = user.get('first_name', '')
         if user.get('last_name'):
@@ -501,16 +515,22 @@ def start_delete_user(update: Update, context: CallbackContext) -> int:
         username = f"@{user.get('username')}" if user.get('username') else "No username"
         user_list += f"ID: {user.get('user_id')} - {name} ({username})\n"
     
+    # Prompt for user input
     query.edit_message_text(
         f"🗑️ Delete User\n\n{user_list}\n\nPlease enter the ID of the user you want to delete:\n\n(Type /cancel to abort)"
     )
     
+    # Transition to the state where we wait for a user ID
     return "WAITING_USER_ID"
 
 def process_delete_user_id(update: Update, context: CallbackContext) -> int:
-    """Process the user ID for deletion."""
+    """
+    Process the user ID for deletion.
+    Validates the input, shows confirmation dialog with user details.
+    """
     user_id_text = update.message.text.strip()
     
+    # Validate that the input is a number
     try:
         user_id = int(user_id_text)
     except ValueError:
@@ -545,11 +565,18 @@ def process_delete_user_id(update: Update, context: CallbackContext) -> int:
         reply_markup=InlineKeyboardMarkup(keyboard)
     )
     
+    # End the conversation, further actions will be through callbacks
     return ConversationHandler.END
 
-# Clear attendance conversation handlers
+# ----------------------------------------
+# Clear Attendance Conversation Functions
+# ----------------------------------------
+
 def start_clear_attendance(update: Update, context: CallbackContext) -> int:
-    """Start the clear attendance conversation."""
+    """
+    Start the clear attendance conversation flow.
+    Shows a list of all users to help the admin choose a user ID.
+    """
     query = update.callback_query
     query.answer()
     
@@ -571,9 +598,13 @@ def start_clear_attendance(update: Update, context: CallbackContext) -> int:
     return "WAITING_USER_ID"
 
 def process_clear_attendance_id(update: Update, context: CallbackContext) -> int:
-    """Process the user ID for clearing attendance."""
+    """
+    Process the user ID for clearing attendance.
+    Validates the input, shows recent attendance records, and asks for confirmation.
+    """
     user_id_text = update.message.text.strip()
     
+    # Validate that the input is a number
     try:
         user_id = int(user_id_text)
     except ValueError:
@@ -634,9 +665,15 @@ def process_clear_attendance_id(update: Update, context: CallbackContext) -> int
     
     return ConversationHandler.END
 
-# User details conversation handlers
+# ----------------------------------------
+# User Details Conversation Functions
+# ----------------------------------------
+
 def start_user_details(update: Update, context: CallbackContext) -> int:
-    """Start the user details conversation."""
+    """
+    Start the user details conversation flow.
+    Shows a list of all users to help the admin choose a user ID.
+    """
     query = update.callback_query
     query.answer()
     
@@ -658,9 +695,13 @@ def start_user_details(update: Update, context: CallbackContext) -> int:
     return "WAITING_USER_ID"
 
 def process_user_details_id(update: Update, context: CallbackContext) -> int:
-    """Process the user ID for viewing details."""
+    """
+    Process the user ID for viewing details.
+    Validates the input and displays comprehensive user information and history.
+    """
     user_id_text = update.message.text.strip()
     
+    # Validate that the input is a number
     try:
         user_id = int(user_id_text)
     except ValueError:
@@ -737,7 +778,7 @@ def process_user_details_id(update: Update, context: CallbackContext) -> int:
             InlineKeyboardButton("🗑️ Delete User", callback_data=f"delete_user_{user_id}"),
             InlineKeyboardButton("🧹 Clear Attendance", callback_data=f"clear_attendance_{user_id}")
         ],
-        [InlineKeyboardButton("📅 Delete Specific Date", callback_data=f"prompt_delete_attendance")],
+        [InlineKeyboardButton("📅 Delete Specific Date", callback_data=f"delete_specific_date_{user_id}")],
         [InlineKeyboardButton("🔙 Back", callback_data="admin_user_management")]
     ]
     
@@ -748,9 +789,15 @@ def process_user_details_id(update: Update, context: CallbackContext) -> int:
     
     return ConversationHandler.END
 
-# Delete specific attendance conversation handlers
+# ----------------------------------------
+# Delete Specific Attendance Conversation Functions
+# ----------------------------------------
+
 def start_delete_attendance(update: Update, context: CallbackContext) -> int:
-    """Start the delete specific attendance conversation."""
+    """
+    Start the delete specific attendance conversation flow.
+    Shows a list of all users to help the admin choose a user ID.
+    """
     query = update.callback_query
     query.answer()
     
@@ -772,9 +819,13 @@ def start_delete_attendance(update: Update, context: CallbackContext) -> int:
     return "WAITING_USER_ID"
 
 def process_delete_attendance_user_id(update: Update, context: CallbackContext) -> int:
-    """Process the user ID for deleting specific attendance."""
+    """
+    Process the user ID for deleting specific attendance.
+    Validates the input, stores the user ID, and proceeds to date selection.
+    """
     user_id_text = update.message.text.strip()
     
+    # Validate that the input is a number
     try:
         user_id = int(user_id_text)
     except ValueError:
@@ -791,7 +842,7 @@ def process_delete_attendance_user_id(update: Update, context: CallbackContext) 
         )
         return "WAITING_USER_ID"
     
-    # Store the user ID in context
+    # Store the user ID in context for next step
     context.user_data['target_user_id'] = user_id
     
     # Get the user's name safely
@@ -826,6 +877,7 @@ def process_delete_attendance_user_id(update: Update, context: CallbackContext) 
     else:
         history_text = "\nNo attendance records found."
     
+    # Prompt for date input
     update.message.reply_text(
         f"📅 Delete Attendance Record\n\n"
         f"Selected user: {name} (ID: {user_id})\n{history_text}\n\n"
@@ -833,10 +885,14 @@ def process_delete_attendance_user_id(update: Update, context: CallbackContext) 
         f"(Type /cancel to abort)"
     )
     
+    # Move to next state: waiting for date input
     return "WAITING_DATE"
 
 def process_delete_attendance_date(update: Update, context: CallbackContext) -> int:
-    """Process the date for deleting specific attendance."""
+    """
+    Process the date for deleting specific attendance.
+    Validates the date, finds the matching record, and shows confirmation.
+    """
     date_text = update.message.text.strip()
     user_id = context.user_data.get('target_user_id')
     name = context.user_data.get('target_user_name')
@@ -881,6 +937,7 @@ def process_delete_attendance_date(update: Update, context: CallbackContext) -> 
         [InlineKeyboardButton("❌ No, Cancel", callback_data="admin_user_management")]
     ]
     
+    # Show confirmation message
     update.message.reply_text(
         f"⚠️ Delete Attendance Record Confirmation\n\n"
         f"Are you sure you want to delete the following attendance record for {name}?\n\n"
@@ -901,8 +958,15 @@ def main() -> None:
     # Get the dispatcher to register handlers
     dispatcher = updater.dispatcher
     
-    # Add conversation handlers for admin options (MUST BE REGISTERED FIRST for higher priority)
-    # User deletion conversation
+    # ============================================================================
+    # CONVERSATION HANDLERS - INTERACTIVE ADMIN FLOWS
+    # ============================================================================
+    # These conversation handlers enable interactive admin operations through a
+    # step-by-step process rather than requiring manual command input.
+    # They must be registered first to have higher priority than regular handlers.
+    
+    # User deletion conversation - Allows admins to delete users via an interactive flow
+    # Flow: Show user list -> Admin enters user ID -> Confirmation screen -> Delete user
     delete_user_conv_handler = ConversationHandler(
         entry_points=[CallbackQueryHandler(start_delete_user, pattern='^prompt_delete_user$')],
         states={
@@ -912,7 +976,8 @@ def main() -> None:
         allow_reentry=True
     )
     
-    # Clear attendance conversation
+    # Clear attendance conversation - Allows admins to clear all attendance for a user
+    # Flow: Show user list -> Admin enters user ID -> Show attendance history -> Confirmation -> Clear
     clear_attendance_conv_handler = ConversationHandler(
         entry_points=[CallbackQueryHandler(start_clear_attendance, pattern='^prompt_clear_attendance$')],
         states={
@@ -922,7 +987,8 @@ def main() -> None:
         allow_reentry=True
     )
     
-    # User details conversation
+    # User details conversation - Allows admins to view detailed user info
+    # Flow: Show user list -> Admin enters user ID -> Display detailed user profile
     user_details_conv_handler = ConversationHandler(
         entry_points=[CallbackQueryHandler(start_user_details, pattern='^prompt_user_details$')],
         states={
@@ -932,7 +998,8 @@ def main() -> None:
         allow_reentry=True
     )
     
-    # Delete specific attendance conversation
+    # Delete specific attendance record conversation
+    # Flow: Show user list -> Admin enters user ID -> Admin enters date -> Confirmation -> Delete
     delete_attendance_conv_handler = ConversationHandler(
         entry_points=[CallbackQueryHandler(start_delete_attendance, pattern='^prompt_delete_attendance$')],
         states={
@@ -949,11 +1016,15 @@ def main() -> None:
     dispatcher.add_handler(user_details_conv_handler)
     dispatcher.add_handler(delete_attendance_conv_handler)
     
-    # Register command handlers
+    # ============================================================================
+    # REGULAR COMMAND HANDLERS
+    # ============================================================================
+    
+    # General commands
     dispatcher.add_handler(CommandHandler("start", start_command))
     dispatcher.add_handler(CommandHandler("help", help_command))
     dispatcher.add_handler(CommandHandler("menu", show_menu_command))
-    dispatcher.add_handler(CommandHandler("keyboard", keyboard_command))  # New keyboard command
+    dispatcher.add_handler(CommandHandler("keyboard", keyboard_command))
     dispatcher.add_handler(CommandHandler("admin", admin_menu_command))
     
     # Worker command handlers
@@ -973,15 +1044,29 @@ def main() -> None:
     dispatcher.add_handler(CommandHandler("userdetails", user_details_command))
     dispatcher.add_handler(CommandHandler("deleteattendance", delete_attendance_command))
     
-    # Register callback query handlers
+    # ============================================================================
+    # CALLBACK QUERY HANDLERS
+    # ============================================================================
+    
+    # Interface callbacks (showing menus)
     dispatcher.add_handler(CallbackQueryHandler(interface_callback_handler, pattern="^show_"))
+    
+    # All other callbacks (admin operations, attendance, etc.)
     dispatcher.add_handler(CallbackQueryHandler(handle_callback_query))
+    
+    # ============================================================================
+    # MESSAGE HANDLERS AND ERROR HANDLING
+    # ============================================================================
     
     # Add handler for text messages (non-commands)
     dispatcher.add_handler(MessageHandler(Filters.text & ~Filters.command, text_message_handler))
     
     # Register error handler
     dispatcher.add_error_handler(error_handler)
+    
+    # ============================================================================
+    # STARTUP OPERATIONS
+    # ============================================================================
     
     # Start the reminder scheduler
     reminder_scheduler = setup_reminders(updater.bot)
