@@ -74,23 +74,41 @@ def check_out(user_id, timestamp=None):
         if not existing or "check_in" not in existing:
             return False, "You need to check in first"
         
-        if "check_out" in existing:
-            return False, "Already checked out today"
+        # Calculate duration based on the most recent check-in
+        check_in_time = existing["check_in"]
+        duration = (timestamp - check_in_time).total_seconds() / 3600  # hours
         
-        # Calculate duration
-        duration = (timestamp - existing["check_in"]).total_seconds() / 3600  # hours
+        # Handle multiple check-ins - calculate total duration for the day
+        total_duration = duration
+        if "check_ins" in existing and len(existing["check_ins"]) > 0:
+            # If we have previous check-ins/check-outs, add those durations
+            if "check_outs" in existing and len(existing["check_outs"]) > 0:
+                for checkout in existing["check_outs"]:
+                    if "duration" in checkout:
+                        total_duration += checkout["duration"]
         
+        # Record this check-out
+        check_outs = existing.get("check_outs", [])
+        check_outs.append({
+            "time": timestamp,
+            "duration": round(duration, 2),
+            "created_at": timestamp
+        })
+        
+        # Update the record
         attendance_collection.update_one(
             {"user_id": user_id, "date": today},
             {
                 "$set": {
                     "check_out": timestamp,
-                    "duration": round(duration, 2),
+                    "check_outs": check_outs,
+                    "duration": round(total_duration, 2),
                     "updated_at": timestamp
                 }
             }
         )
-        return True, f"Check-out successful. Duration: {round(duration, 2)} hours"
+        
+        return True, f"Check-out successful. Session duration: {round(duration, 2)} hours. Total today: {round(total_duration, 2)} hours"
     except Exception as e:
         logging.error(f"Error checking out: {e}")
         return False, f"Error: {str(e)}"
@@ -119,15 +137,80 @@ def get_user_history(user_id, limit=10):
 
 def get_today_attendance():
     """Get today's attendance for all users."""
-    today = datetime.datetime.utcnow().replace(hour=0, minute=0, second=0, microsecond=0)
+    # Ensure we have a valid datetime object
+    try:
+        today = datetime.datetime.utcnow().replace(hour=0, minute=0, second=0, microsecond=0)
+    except Exception as e:
+        logging.error(f"Error creating today date: {e}")
+        # Use a simpler approach as fallback
+        today = datetime.datetime.utcnow().date()
     
-    return list(attendance_collection.find({"date": today}))
+    # Query the database
+    try:
+        records = list(attendance_collection.find({"date": today}))
+        # Post-process to ensure all date fields are valid
+        for record in records:
+            # Ensure check_in is valid
+            if 'check_in' in record and record['check_in'] is None:
+                record['check_in'] = "N/A"
+            # Ensure check_out is valid
+            if 'check_out' in record and record['check_out'] is None:
+                record['check_out'] = "N/A"
+        return records
+    except Exception as e:
+        logging.error(f"Error fetching today's attendance: {e}")
+        return []
 
 def get_date_range_attendance(start_date, end_date):
     """Get attendance within a date range."""
-    return list(attendance_collection.find({
-        "date": {"$gte": start_date, "$lte": end_date}
-    }).sort("date", DESCENDING))
+    try:
+        # Validate date objects
+        if not isinstance(start_date, (datetime.datetime, datetime.date)):
+            if isinstance(start_date, str):
+                try:
+                    start_date = datetime.datetime.strptime(start_date, "%Y-%m-%d")
+                    start_date = start_date.replace(hour=0, minute=0, second=0, microsecond=0)
+                except (ValueError, TypeError, AttributeError):
+                    # Default to one week ago if parsing fails
+                    start_date = datetime.datetime.utcnow() - datetime.timedelta(days=7)
+                    start_date = start_date.replace(hour=0, minute=0, second=0, microsecond=0)
+            else:
+                # Default to one week ago
+                start_date = datetime.datetime.utcnow() - datetime.timedelta(days=7)
+                start_date = start_date.replace(hour=0, minute=0, second=0, microsecond=0)
+                
+        if not isinstance(end_date, (datetime.datetime, datetime.date)):
+            if isinstance(end_date, str):
+                try:
+                    end_date = datetime.datetime.strptime(end_date, "%Y-%m-%d")
+                    end_date = end_date.replace(hour=23, minute=59, second=59, microsecond=999999)
+                except (ValueError, TypeError, AttributeError):
+                    # Default to today if parsing fails
+                    end_date = datetime.datetime.utcnow()
+                    end_date = end_date.replace(hour=23, minute=59, second=59, microsecond=999999)
+            else:
+                # Default to today
+                end_date = datetime.datetime.utcnow()
+                end_date = end_date.replace(hour=23, minute=59, second=59, microsecond=999999)
+        
+        # Query database
+        records = list(attendance_collection.find({
+            "date": {"$gte": start_date, "$lte": end_date}
+        }).sort("date", DESCENDING))
+        
+        # Post-process to ensure all date fields are valid
+        for record in records:
+            # Ensure check_in is valid
+            if 'check_in' in record and record['check_in'] is None:
+                record['check_in'] = "N/A"
+            # Ensure check_out is valid
+            if 'check_out' in record and record['check_out'] is None:
+                record['check_out'] = "N/A"
+                
+        return records
+    except Exception as e:
+        logging.error(f"Error fetching date range attendance: {e}")
+        return []
 
 def get_user_history_by_date(user_id, target_date):
     """Get user's attendance history for a specific date."""
@@ -202,14 +285,18 @@ def get_admin_users():
         return []
 
 def get_user_name(user_id):
-    """Get user's full name."""
+    """Get user's full name without 'None' appearing for missing last names."""
     user = get_user(user_id)
     if not user:
         return f"User {user_id}"
     
-    if user.get("last_name"):
-        return f"{user['first_name']} {user.get('last_name')}"
-    return user["first_name"]
+    first_name = user.get('first_name', '')
+    last_name = user.get('last_name', '')
+    
+    if last_name:
+        return f"{first_name} {last_name}"
+    else:
+        return first_name
 
 def get_month_attendance(year, month):
     """Get attendance for a specific month."""
@@ -330,69 +417,61 @@ def allow_multiple_check_ins(user_id, timestamp=None):
         
         if existing:
             # If there's an existing record, update it
-            if "check_out" in existing:
-                # User has already checked out, add a new check-in
-                check_ins = existing.get("check_ins", [])
-                if "check_in" in existing:
-                    # Add the original check-in if not already in check_ins
-                    if not any(c["time"] == existing["check_in"] for c in check_ins):
-                        check_ins.append({
-                            "time": existing["check_in"],
-                            "created_at": existing.get("created_at", existing["check_in"])
-                        })
-                
-                # Add the new check-in
+            check_ins = existing.get("check_ins", [])
+            
+            # Add the original check-in if not already in check_ins
+            if "check_in" in existing and not any(c.get("time") == existing["check_in"] for c in check_ins):
                 check_ins.append({
-                    "time": timestamp,
-                    "created_at": timestamp
+                    "time": existing["check_in"],
+                    "created_at": existing.get("created_at", existing["check_in"])
                 })
-                
-                # Update the record
-                attendance_collection.update_one(
-                    {"user_id": user_id, "date": today},
-                    {
-                        "$set": {
-                            "check_in": timestamp,  # Most recent check-in
-                            "check_ins": check_ins,
-                            "check_out": None,  # Remove check-out since user is checking in again
-                            "duration": None,   # Remove duration as well
-                            "updated_at": timestamp
-                        }
-                    }
-                )
-                return True, "Check-in successful (additional)"
-            else:
-                # User has not checked out yet - just store in check_ins array
-                check_ins = existing.get("check_ins", [])
-                if "check_in" in existing:
-                    # Add the original check-in if not already in check_ins
-                    if not any(c["time"] == existing["check_in"] for c in check_ins):
-                        check_ins.append({
-                            "time": existing["check_in"],
-                            "created_at": existing.get("created_at", existing["check_in"])
+            
+            # Add the new check-in
+            check_ins.append({
+                "time": timestamp,
+                "created_at": timestamp
+            })
+            
+            # Reset checkout if it exists - we're starting a new session
+            update_data = {
+                "check_in": timestamp,  # Most recent check-in
+                "check_ins": check_ins,
+                "updated_at": timestamp
+            }
+            
+            # If there was a previous checkout, save it to history
+            if "check_out" in existing and existing["check_out"] is not None:
+                check_outs = existing.get("check_outs", [])
+                if not any(c.get("time") == existing["check_out"] for c in check_outs):
+                    # Calculate duration for the previous session if not recorded
+                    last_checkin = None
+                    for checkin in reversed(check_ins[:-1]):  # Skip the newest check-in
+                        if "time" in checkin:
+                            last_checkin = checkin["time"]
+                            break
+                    
+                    if last_checkin:
+                        duration = (existing["check_out"] - last_checkin).total_seconds() / 3600
+                        check_outs.append({
+                            "time": existing["check_out"],
+                            "duration": round(duration, 2),
+                            "created_at": existing["check_out"]
                         })
                 
-                # Add the new check-in (only if it's significantly different from previous)
-                if not check_ins or (timestamp - check_ins[-1]["time"]).total_seconds() > 60:  # More than a minute difference
-                    check_ins.append({
-                        "time": timestamp,
-                        "created_at": timestamp
-                    })
-                    
-                    # Update the record
-                    attendance_collection.update_one(
-                        {"user_id": user_id, "date": today},
-                        {
-                            "$set": {
-                                "check_in": timestamp,  # Most recent check-in
-                                "check_ins": check_ins,
-                                "updated_at": timestamp
-                            }
-                        }
-                    )
-                    return True, f"Check-in updated ({len(check_ins)} check-ins today)"
-                else:
-                    return False, "Already checked in recently"
+                update_data["check_outs"] = check_outs
+                # Remove current check_out since we're starting a new session
+                update_data["check_out"] = None
+            
+            # Update the record
+            attendance_collection.update_one(
+                {"user_id": user_id, "date": today},
+                {"$set": update_data}
+            )
+            
+            if len(check_ins) > 1:
+                return True, f"Check-in successful (session #{len(check_ins)})"
+            else:
+                return True, "Check-in successful"
         else:
             # No existing record, create a new one
             attendance_collection.insert_one({
@@ -403,6 +482,7 @@ def allow_multiple_check_ins(user_id, timestamp=None):
                     "time": timestamp,
                     "created_at": timestamp
                 }],
+                "check_outs": [],
                 "created_at": timestamp,
                 "updated_at": timestamp
             })

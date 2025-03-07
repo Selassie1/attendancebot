@@ -161,6 +161,7 @@ def handle_callback_query(update: Update, context: CallbackContext) -> None:
         # For photo messages, we need to send a new message instead of editing
         query.answer("Command received")
         
+        # Handle different callback types 
         if data == "cmd_main_menu" or data == "show_worker_menu":
             # Show main worker menu
             context.bot.send_message(
@@ -169,7 +170,6 @@ def handle_callback_query(update: Update, context: CallbackContext) -> None:
                 reply_markup=get_user_menu_keyboard(is_admin),
                 parse_mode=ParseMode.MARKDOWN
             )
-            return
         elif data == "show_admin_menu" or data == "admin_menu":
             # Show admin menu
             context.bot.send_message(
@@ -178,13 +178,93 @@ def handle_callback_query(update: Update, context: CallbackContext) -> None:
                 reply_markup=get_admin_menu_keyboard(),
                 parse_mode=ParseMode.MARKDOWN
             )
-            return
+        elif data == "admin_users":
+            context.bot.send_message(
+                chat_id=user_id,
+                text="Loading users...",
+                parse_mode=ParseMode.MARKDOWN
+            )
+            users_command(update, context)
+        elif data == "admin_attendance":
+            context.bot.send_message(
+                chat_id=user_id,
+                text="Loading today's attendance...",
+                parse_mode=ParseMode.MARKDOWN
+            )
+            attendance_command(update, context)
+        elif data == "admin_report":
+            context.bot.send_message(
+                chat_id=user_id,
+                text="Loading reports...",
+                parse_mode=ParseMode.MARKDOWN
+            )
+            report_command(update, context)
+        elif data == "admin_dashboard": 
+            context.bot.send_message(
+                chat_id=user_id,
+                text="Loading dashboard...",
+                parse_mode=ParseMode.MARKDOWN
+            )
+            dashboard_command(update, context)
+        elif data == "admin_user_management":
+            context.bot.send_message(
+                chat_id=user_id,
+                text="🔧 *User Management*\n\nSelect an action to manage users:",
+                reply_markup=InlineKeyboardMarkup([
+                    [InlineKeyboardButton("👥 List All Users", callback_data="admin_users")],
+                    [
+                        InlineKeyboardButton("🗑️ Delete User", callback_data="prompt_delete_user"),
+                        InlineKeyboardButton("🧹 Clear Attendance", callback_data="prompt_clear_attendance")
+                    ],
+                    [InlineKeyboardButton("👤 User Details", callback_data="prompt_user_details")],
+                    [InlineKeyboardButton("🔙 Back", callback_data="admin_menu")]
+                ]),
+                parse_mode=ParseMode.MARKDOWN
+            )
+        elif data == "prompt_delete_user":
+            context.bot.send_message(
+                chat_id=user_id,
+                text="🗑️ *Delete User*\n\n"
+                     "Please use the command:\n"
+                     "`/deleteuser USER_ID`\n\n"
+                     "Replace USER_ID with the ID of the user you want to delete.",
+                reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 Back", callback_data="admin_user_management")]]),
+                parse_mode=ParseMode.MARKDOWN
+            )
+        elif data == "prompt_clear_attendance":
+            context.bot.send_message(
+                chat_id=user_id,
+                text="🧹 *Clear Attendance*\n\n"
+                     "Please use the command:\n"
+                     "`/clearattendance USER_ID`\n\n"
+                     "Replace USER_ID with the ID of the user whose attendance you want to clear.",
+                reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 Back", callback_data="admin_user_management")]]),
+                parse_mode=ParseMode.MARKDOWN
+            )
+        elif data == "prompt_user_details":
+            context.bot.send_message(
+                chat_id=user_id,
+                text="👤 *User Details*\n\n"
+                     "Please use the command:\n"
+                     "`/userdetails USER_ID`\n\n"
+                     "Replace USER_ID with the ID of the user you want to view.",
+                reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 Back", callback_data="admin_user_management")]]),
+                parse_mode=ParseMode.MARKDOWN
+            )
+        # For other callbacks, do a simplified version 
+        else:
+            context.bot.send_message(
+                chat_id=user_id,
+                text="Please select from the menu:",
+                reply_markup=get_user_menu_keyboard(is_admin)
+            )
+        return
     
     # Regular message handling
     try:
         if data.startswith("cmd_") or data.startswith(("cal", "hist")):
             handle_history_callback(update, context)
-        elif data.startswith(("admin_", "report_", "dashboard_", "delete_user_", "clear_attendance_", "userdetails_", "prompt_")):
+        elif data.startswith(("admin_", "report_", "dashboard_", "delete_user_", "clear_attendance_", "userdetails_", "prompt_", "confirm_")):
             handle_admin_callback(update, context)
         elif data.startswith("show_"):
             interface_callback_handler(update, context)
@@ -194,7 +274,7 @@ def handle_callback_query(update: Update, context: CallbackContext) -> None:
             logger.warning(f"Unknown callback data received: {data}")
     except Exception as e:
         # If there's an error, send a new message instead of trying to edit
-        logger.error(f"Error handling callback: {e}")
+        logger.error(f"Update {update} caused error {e}")
         query.answer("Error processing command")
         
         # Send a new message with the appropriate menu
@@ -359,6 +439,48 @@ def text_message_handler(update: Update, context: CallbackContext) -> None:
             parse_mode=ParseMode.MARKDOWN
         )
 
+def keyboard_command(update: Update, context: CallbackContext) -> None:
+    """Handler for the /keyboard command to always show the keyboard buttons."""
+    user_id = update.effective_user.id
+    user_name = update.effective_user.first_name
+    user = database.get_user(user_id)
+    
+    # If user doesn't exist yet, register them
+    if not user:
+        database.register_user(
+            user_id=user_id,
+            first_name=user_name,
+            last_name=update.effective_user.last_name,
+            username=update.effective_user.username,
+            is_admin=user_id == config.ADMIN_USER_ID
+        )
+        user = database.get_user(user_id)
+    
+    is_admin = user and user.get("is_admin", False)
+    
+    if is_admin:
+        update.message.reply_text(
+            f"👋 *Hello {user_name}!*\n\n"
+            "Here are your keyboard options:",
+            reply_markup=get_user_menu_keyboard(is_admin),
+            parse_mode=ParseMode.MARKDOWN
+        )
+        
+        # Also send admin keyboard
+        update.message.reply_text(
+            "👑 *Admin Panel*\n\n"
+            "Here are your admin options:",
+            reply_markup=get_admin_menu_keyboard(),
+            parse_mode=ParseMode.MARKDOWN
+        )
+    else:
+        update.message.reply_text(
+            f"👋 *Hello {user_name}!*\n\n"
+            "Here are your keyboard options:",
+            reply_markup=get_user_menu_keyboard(False),
+            parse_mode=ParseMode.MARKDOWN
+        )
+
 def main() -> None:
     """Start the bot."""
     global reminder_scheduler
@@ -372,8 +494,9 @@ def main() -> None:
     # Register command handlers
     dispatcher.add_handler(CommandHandler("start", start_command))
     dispatcher.add_handler(CommandHandler("help", help_command))
-    dispatcher.add_handler(CommandHandler("menu", show_menu_command))  # New menu command
-    dispatcher.add_handler(CommandHandler("admin", admin_menu_command))  # Direct admin access
+    dispatcher.add_handler(CommandHandler("menu", show_menu_command))
+    dispatcher.add_handler(CommandHandler("keyboard", keyboard_command))  # New keyboard command
+    dispatcher.add_handler(CommandHandler("admin", admin_menu_command))
     
     # Worker command handlers
     dispatcher.add_handler(CommandHandler("checkin", check_in_command))

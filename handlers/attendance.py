@@ -126,14 +126,18 @@ def check_out_command(update: Update, context: CallbackContext) -> None:
     
     # Format the message
     if success:
-        # Get duration from the message
+        # Extract session duration and total duration from the message
         import re
-        duration_match = re.search(r"Duration: ([\d.]+) hours", message)
-        duration = duration_match.group(1) if duration_match else "unknown"
+        session_match = re.search(r"Session duration: ([\d.]+) hours", message)
+        total_match = re.search(r"Total today: ([\d.]+) hours", message)
+        
+        session_duration = session_match.group(1) if session_match else "unknown"
+        total_duration = total_match.group(1) if total_match else session_duration
         
         formatted_message = f"🚪 *{user_name}*, you have successfully checked out!\n\n"
         formatted_message += f"_Time: {datetime.now().strftime('%H:%M:%S')}_\n"
-        formatted_message += f"_Duration: {duration} hours_"
+        formatted_message += f"_Session duration: {session_duration} hours_\n"
+        formatted_message += f"_Total today: {total_duration} hours_"
         
         # Notify admins
         admin_users = database.get_admin_users()
@@ -142,7 +146,7 @@ def check_out_command(update: Update, context: CallbackContext) -> None:
                 if admin["user_id"] != user_id:  # Don't notify the user if they're an admin
                     try:
                         admin_message = f"👤 *{database.get_user_name(user_id)}* has checked out at _{datetime.now().strftime('%H:%M:%S')}_\n"
-                        admin_message += f"_Duration: {duration} hours_"
+                        admin_message += f"_Session: {session_duration} hrs | Total: {total_duration} hrs_"
                         context.bot.send_message(
                             chat_id=admin["user_id"],
                             text=admin_message,
@@ -538,14 +542,18 @@ def handle_history_callback(update: Update, context: CallbackContext) -> None:
         
         # Format the message
         if success:
-            # Get duration from the message
+            # Extract session duration and total duration from the message
             import re
-            duration_match = re.search(r"Duration: ([\d.]+) hours", message)
-            duration = duration_match.group(1) if duration_match else "unknown"
+            session_match = re.search(r"Session duration: ([\d.]+) hours", message)
+            total_match = re.search(r"Total today: ([\d.]+) hours", message)
+            
+            session_duration = session_match.group(1) if session_match else "unknown"
+            total_duration = total_match.group(1) if total_match else session_duration
             
             formatted_message = f"🚪 *{user_name}*, you have successfully checked out!\n\n"
             formatted_message += f"_Time: {datetime.now().strftime('%H:%M:%S')}_\n"
-            formatted_message += f"_Duration: {duration} hours_"
+            formatted_message += f"_Session duration: {session_duration} hours_\n"
+            formatted_message += f"_Total today: {total_duration} hours_"
             
             # Notify admins
             admin_users = database.get_admin_users()
@@ -554,7 +562,7 @@ def handle_history_callback(update: Update, context: CallbackContext) -> None:
                     if admin["user_id"] != user_id:  # Don't notify the user if they're an admin
                         try:
                             admin_message = f"👤 *{database.get_user_name(user_id)}* has checked out at _{datetime.now().strftime('%H:%M:%S')}_\n"
-                            admin_message += f"_Duration: {duration} hours_"
+                            admin_message += f"_Session: {session_duration} hrs | Total: {total_duration} hrs_"
                             context.bot.send_message(
                                 chat_id=admin["user_id"],
                                 text=admin_message,
