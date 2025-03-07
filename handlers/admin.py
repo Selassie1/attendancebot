@@ -19,6 +19,9 @@ def get_admin_menu_keyboard():
             InlineKeyboardButton("📈 Dashboard", callback_data="admin_dashboard")
         ],
         [
+            InlineKeyboardButton("🔧 User Management", callback_data="admin_user_management")
+        ],
+        [
             InlineKeyboardButton("🔄 Worker Menu", callback_data="show_worker_menu")
         ]
     ]
@@ -525,6 +528,108 @@ def handle_admin_callback(update: Update, context: CallbackContext) -> None:
                 parse_mode=ParseMode.MARKDOWN
             )
     
+    elif query.data == "admin_user_management":
+        # Show user management options
+        keyboard = [
+            [InlineKeyboardButton("👥 List All Users", callback_data="admin_users")],
+            [
+                InlineKeyboardButton("🗑️ Delete User", callback_data="prompt_delete_user"),
+                InlineKeyboardButton("🧹 Clear Attendance", callback_data="prompt_clear_attendance")
+            ],
+            [InlineKeyboardButton("👤 User Details", callback_data="prompt_user_details")],
+            [InlineKeyboardButton("🔙 Back", callback_data="admin_menu")]
+        ]
+        
+        try:
+            query.edit_message_text(
+                "🔧 *User Management*\n\n"
+                "Select an action to manage users:",
+                reply_markup=InlineKeyboardMarkup(keyboard),
+                parse_mode=ParseMode.MARKDOWN
+            )
+        except Exception as e:
+            # If editing fails, send a new message
+            logging.error(f"Error editing message: {e}")
+            context.bot.send_message(
+                chat_id=user_id,
+                text="🔧 *User Management*\n\n"
+                     "Select an action to manage users:",
+                reply_markup=InlineKeyboardMarkup(keyboard),
+                parse_mode=ParseMode.MARKDOWN
+            )
+    
+    elif query.data == "prompt_delete_user":
+        # Show a prompt to enter user ID
+        try:
+            query.edit_message_text(
+                "🗑️ *Delete User*\n\n"
+                "Please use the command:\n"
+                "`/deleteuser USER_ID`\n\n"
+                "Replace USER_ID with the ID of the user you want to delete.",
+                reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 Back", callback_data="admin_user_management")]]),
+                parse_mode=ParseMode.MARKDOWN
+            )
+        except Exception as e:
+            # If editing fails, send a new message
+            logging.error(f"Error editing message: {e}")
+            context.bot.send_message(
+                chat_id=user_id,
+                text="🗑️ *Delete User*\n\n"
+                     "Please use the command:\n"
+                     "`/deleteuser USER_ID`\n\n"
+                     "Replace USER_ID with the ID of the user you want to delete.",
+                reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 Back", callback_data="admin_user_management")]]),
+                parse_mode=ParseMode.MARKDOWN
+            )
+    
+    elif query.data == "prompt_clear_attendance":
+        # Show a prompt to enter user ID
+        try:
+            query.edit_message_text(
+                "🧹 *Clear Attendance*\n\n"
+                "Please use the command:\n"
+                "`/clearattendance USER_ID`\n\n"
+                "Replace USER_ID with the ID of the user whose attendance records you want to clear.",
+                reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 Back", callback_data="admin_user_management")]]),
+                parse_mode=ParseMode.MARKDOWN
+            )
+        except Exception as e:
+            # If editing fails, send a new message
+            logging.error(f"Error editing message: {e}")
+            context.bot.send_message(
+                chat_id=user_id,
+                text="🧹 *Clear Attendance*\n\n"
+                     "Please use the command:\n"
+                     "`/clearattendance USER_ID`\n\n"
+                     "Replace USER_ID with the ID of the user whose attendance records you want to clear.",
+                reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 Back", callback_data="admin_user_management")]]),
+                parse_mode=ParseMode.MARKDOWN
+            )
+    
+    elif query.data == "prompt_user_details":
+        # Show a prompt to enter user ID
+        try:
+            query.edit_message_text(
+                "👤 *User Details*\n\n"
+                "Please use the command:\n"
+                "`/userdetails USER_ID`\n\n"
+                "Replace USER_ID with the ID of the user whose details you want to view.",
+                reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 Back", callback_data="admin_user_management")]]),
+                parse_mode=ParseMode.MARKDOWN
+            )
+        except Exception as e:
+            # If editing fails, send a new message
+            logging.error(f"Error editing message: {e}")
+            context.bot.send_message(
+                chat_id=user_id,
+                text="👤 *User Details*\n\n"
+                     "Please use the command:\n"
+                     "`/userdetails USER_ID`\n\n"
+                     "Replace USER_ID with the ID of the user whose details you want to view.",
+                reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 Back", callback_data="admin_user_management")]]),
+                parse_mode=ParseMode.MARKDOWN
+            )
+    
     # Default admin menu handlers
     elif query.data == "admin_menu":
         query.edit_message_text(
@@ -764,4 +869,238 @@ def handle_admin_callback(update: Update, context: CallbackContext) -> None:
                 f"❌ Error generating dashboard: {str(e)}",
                 reply_markup=get_admin_menu_keyboard(),
                 parse_mode=ParseMode.MARKDOWN
-            ) 
+            )
+
+@admin_required
+def delete_user_command(update: Update, context: CallbackContext) -> None:
+    """Handler for the /deleteuser command."""
+    args = context.args
+    
+    if not args or len(args) == 0:
+        update.message.reply_text(
+            "❌ *Error*: You must provide a user ID.\n\n"
+            "Usage: `/deleteuser USER_ID`",
+            reply_markup=get_admin_menu_keyboard(),
+            parse_mode=ParseMode.MARKDOWN
+        )
+        return
+    
+    # Try to get the user ID from the arguments
+    try:
+        user_id = int(args[0])
+    except ValueError:
+        update.message.reply_text(
+            "❌ *Error*: User ID must be a number.",
+            reply_markup=get_admin_menu_keyboard(),
+            parse_mode=ParseMode.MARKDOWN
+        )
+        return
+    
+    # Check if the user exists
+    user = database.get_user(user_id)
+    if not user:
+        update.message.reply_text(
+            "❌ *Error*: User not found.",
+            reply_markup=get_admin_menu_keyboard(),
+            parse_mode=ParseMode.MARKDOWN
+        )
+        return
+    
+    # Delete the user
+    success, message = database.delete_user(user_id)
+    
+    if success:
+        update.message.reply_text(
+            f"✅ *Success*: {message}",
+            reply_markup=get_admin_menu_keyboard(),
+            parse_mode=ParseMode.MARKDOWN
+        )
+    else:
+        update.message.reply_text(
+            f"❌ *Error*: {message}",
+            reply_markup=get_admin_menu_keyboard(),
+            parse_mode=ParseMode.MARKDOWN
+        )
+
+@admin_required
+def delete_record_command(update: Update, context: CallbackContext) -> None:
+    """Handler for the /deleterecord command."""
+    args = context.args
+    
+    if not args or len(args) < 2:
+        update.message.reply_text(
+            "❌ *Error*: You must provide a user ID and date.\n\n"
+            "Usage: `/deleterecord USER_ID YYYY-MM-DD`",
+            reply_markup=get_admin_menu_keyboard(),
+            parse_mode=ParseMode.MARKDOWN
+        )
+        return
+    
+    # Try to get the user ID and date from the arguments
+    try:
+        user_id = int(args[0])
+        date = args[1]
+    except ValueError:
+        update.message.reply_text(
+            "❌ *Error*: User ID must be a number.",
+            reply_markup=get_admin_menu_keyboard(),
+            parse_mode=ParseMode.MARKDOWN
+        )
+        return
+    
+    # Check if the user exists
+    user = database.get_user(user_id)
+    if not user:
+        update.message.reply_text(
+            "❌ *Error*: User not found.",
+            reply_markup=get_admin_menu_keyboard(),
+            parse_mode=ParseMode.MARKDOWN
+        )
+        return
+    
+    # Delete the attendance record
+    success, message = database.delete_attendance_record(user_id, date)
+    
+    if success:
+        update.message.reply_text(
+            f"✅ *Success*: {message} for user {user['first_name']} on {date}",
+            reply_markup=get_admin_menu_keyboard(),
+            parse_mode=ParseMode.MARKDOWN
+        )
+    else:
+        update.message.reply_text(
+            f"❌ *Error*: {message}",
+            reply_markup=get_admin_menu_keyboard(),
+            parse_mode=ParseMode.MARKDOWN
+        )
+
+@admin_required
+def clear_attendance_command(update: Update, context: CallbackContext) -> None:
+    """Handler for the /clearattendance command."""
+    args = context.args
+    
+    if not args or len(args) == 0:
+        update.message.reply_text(
+            "❌ *Error*: You must provide a user ID.\n\n"
+            "Usage: `/clearattendance USER_ID`",
+            reply_markup=get_admin_menu_keyboard(),
+            parse_mode=ParseMode.MARKDOWN
+        )
+        return
+    
+    # Try to get the user ID from the arguments
+    try:
+        user_id = int(args[0])
+    except ValueError:
+        update.message.reply_text(
+            "❌ *Error*: User ID must be a number.",
+            reply_markup=get_admin_menu_keyboard(),
+            parse_mode=ParseMode.MARKDOWN
+        )
+        return
+    
+    # Check if the user exists
+    user = database.get_user(user_id)
+    if not user:
+        update.message.reply_text(
+            "❌ *Error*: User not found.",
+            reply_markup=get_admin_menu_keyboard(),
+            parse_mode=ParseMode.MARKDOWN
+        )
+        return
+    
+    # Delete all attendance records for the user
+    success, message = database.clear_user_attendance(user_id)
+    
+    if success:
+        update.message.reply_text(
+            f"✅ *Success*: {message} for user {user['first_name']}",
+            reply_markup=get_admin_menu_keyboard(),
+            parse_mode=ParseMode.MARKDOWN
+        )
+    else:
+        update.message.reply_text(
+            f"❌ *Error*: {message}",
+            reply_markup=get_admin_menu_keyboard(),
+            parse_mode=ParseMode.MARKDOWN
+        )
+
+@admin_required
+def user_details_command(update: Update, context: CallbackContext) -> None:
+    """Handler for the /userdetails command."""
+    args = context.args
+    
+    if not args or len(args) == 0:
+        update.message.reply_text(
+            "❌ *Error*: You must provide a user ID.\n\n"
+            "Usage: `/userdetails USER_ID`",
+            reply_markup=get_admin_menu_keyboard(),
+            parse_mode=ParseMode.MARKDOWN
+        )
+        return
+    
+    # Try to get the user ID from the arguments
+    try:
+        user_id = int(args[0])
+    except ValueError:
+        update.message.reply_text(
+            "❌ *Error*: User ID must be a number.",
+            reply_markup=get_admin_menu_keyboard(),
+            parse_mode=ParseMode.MARKDOWN
+        )
+        return
+    
+    # Get the user
+    user = database.get_user(user_id)
+    if not user:
+        update.message.reply_text(
+            "❌ *Error*: User not found.",
+            reply_markup=get_admin_menu_keyboard(),
+            parse_mode=ParseMode.MARKDOWN
+        )
+        return
+    
+    # Get the user's recent attendance history
+    history = database.get_user_history(user_id, limit=5)
+    
+    # Create user details message
+    message = f"👤 *User Details*\n\n"
+    message += f"*ID:* `{user['user_id']}`\n"
+    message += f"*Name:* {user['first_name']} {user.get('last_name', '')}\n"
+    message += f"*Username:* {f'@{user['username']}' if user.get('username') else 'None'}\n"
+    message += f"*Role:* {'Admin' if user.get('is_admin', False) else 'Worker'}\n"
+    message += f"*Registered:* {user.get('created_at', 'Unknown').strftime('%Y-%m-%d %H:%M:%S')}\n\n"
+    
+    # Add recent attendance
+    if history:
+        message += "*Recent Attendance:*\n"
+        for record in history:
+            date_str = record["date"].strftime("%Y-%m-%d")
+            check_in = record.get("check_in", "N/A")
+            check_out = record.get("check_out", "N/A")
+            duration = record.get("duration", "N/A")
+            
+            if check_in != "N/A":
+                check_in = check_in.strftime("%H:%M:%S")
+            
+            if check_out != "N/A":
+                check_out = check_out.strftime("%H:%M:%S")
+            
+            message += f"• *{date_str}*: {check_in} → {check_out} ({duration} hours)\n"
+    else:
+        message += "*No attendance records found.*\n"
+    
+    # Add action buttons
+    keyboard = [
+        [
+            InlineKeyboardButton("🗑️ Delete User", callback_data=f"delete_user_{user_id}"),
+            InlineKeyboardButton("🧹 Clear Attendance", callback_data=f"clear_attendance_{user_id}")
+        ],
+        [InlineKeyboardButton("🔙 Back", callback_data="admin_users")]
+    ]
+    
+    update.message.reply_text(
+        message,
+        reply_markup=InlineKeyboardMarkup(keyboard),
+        parse_mode=ParseMode.MARKDOWN
+    ) 

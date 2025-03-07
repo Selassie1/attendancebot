@@ -181,11 +181,10 @@ def handle_callback_query(update: Update, context: CallbackContext) -> None:
             return
     
     # Regular message handling
-    # Route to the appropriate handler based on the prefix
     try:
         if data.startswith("cmd_") or data.startswith(("cal", "hist")):
             handle_history_callback(update, context)
-        elif data.startswith(("admin_", "report_", "dashboard_")):
+        elif data.startswith(("admin_", "report_", "dashboard_", "delete_user_", "clear_attendance_", "userdetails_", "prompt_")):
             handle_admin_callback(update, context)
         elif data.startswith("show_"):
             interface_callback_handler(update, context)
