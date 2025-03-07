@@ -8,6 +8,7 @@ from telegram.ext import (
     Filters,
     CallbackContext,
     CallbackQueryHandler,
+    ConversationHandler,
 )
 import config
 import database
@@ -29,9 +30,11 @@ from handlers.admin import (
     delete_user_command,
     delete_record_command,
     clear_attendance_command,
-    user_details_command
+    user_details_command,
+    delete_attendance_command
 )
 from reminders import setup_reminders
+import datetime
 
 # Enable logging
 logging.basicConfig(
@@ -97,53 +100,43 @@ def start_command(update: Update, context: CallbackContext) -> None:
     )
 
 def help_command(update: Update, context: CallbackContext) -> None:
-    """Handler for the /help command."""
+    """Send a message when the command /help is issued."""
     user_id = update.effective_user.id
-    user_name = update.effective_user.first_name
     user = database.get_user(user_id)
     is_admin = user and user.get("is_admin", False)
     
-    help_text = f"📚 *{user_name}'s Help Guide*\n\n"
-    
-    # Worker commands
-    help_text += (
+    common_commands = (
+        "🤖 *Available Commands*\n\n"
         "*Worker Commands:*\n"
+        "• `/start` - Start the bot and register\n"
+        "• `/menu` - Show main menu\n"
+        "• `/keyboard` - Show keyboard options\n"
         "• `/checkin` - Check in for work\n"
         "• `/checkout` - Check out after work\n"
         "• `/status` - Check your current status\n"
         "• `/history` - View your attendance history\n"
-        "• `/history YYYY-MM-DD` - View history for a specific date\n\n"
+        "• `/help` - Show this help message\n\n"
     )
     
-    # Admin commands
+    admin_commands = ""
     if is_admin:
-        help_text += (
+        admin_commands = (
             "*Admin Commands:*\n"
+            "• `/admin` - Show admin menu\n"
             "• `/users` - List all registered users\n"
             "• `/attendance` - View today's attendance\n"
             "• `/report` - Generate attendance report\n"
-            "• `/report YYYY-MM-DD YYYY-MM-DD` - Report for date range\n"
             "• `/dashboard` - View attendance dashboard\n"
-            "• `/dashboard N` - Dashboard for last N days\n"
             "• `/deleteuser` - Delete a user\n"
             "• `/deleterecord` - Delete a record\n"
             "• `/clearattendance` - Clear attendance for a user\n"
-            "• `/userdetails` - View user details\n\n"
+            "• `/userdetails` - View user details\n"
+            "• `/deleteattendance` - Delete specific attendance record\n\n"
         )
     
-    help_text += (
-        "*Tips:*\n"
-        "• Use the buttons for quick access to commands\n"
-        "• Check in when you start work and check out when you finish\n"
-        "• View your history to track your work hours\n"
-    )
-    
-    # Create appropriate keyboard
-    keyboard = get_admin_menu_keyboard() if is_admin else get_user_menu_keyboard()
-    
     update.message.reply_text(
-        help_text,
-        reply_markup=keyboard,
+        common_commands + admin_commands,
+        reply_markup=get_user_menu_keyboard(is_admin),
         parse_mode=ParseMode.MARKDOWN
     )
 
@@ -481,6 +474,423 @@ def keyboard_command(update: Update, context: CallbackContext) -> None:
             parse_mode=ParseMode.MARKDOWN
         )
 
+# Conversation handlers for admin operations
+
+def cancel_admin_conversation(update: Update, context: CallbackContext) -> int:
+    """Cancel the admin conversation and return to the admin menu."""
+    update.message.reply_text(
+        "Operation cancelled. Returning to admin menu.",
+        reply_markup=get_admin_menu_keyboard()
+    )
+    return ConversationHandler.END
+
+# Delete user conversation handlers
+def start_delete_user(update: Update, context: CallbackContext) -> int:
+    """Start the delete user conversation."""
+    query = update.callback_query
+    query.answer()
+    
+    # Show all users to help admin choose
+    users = database.get_all_users()
+    user_list = "👥 Available Users:\n\n"
+    
+    for user in users:
+        name = user.get('first_name', '')
+        if user.get('last_name'):
+            name += f" {user.get('last_name')}"
+        username = f"@{user.get('username')}" if user.get('username') else "No username"
+        user_list += f"ID: {user.get('user_id')} - {name} ({username})\n"
+    
+    query.edit_message_text(
+        f"🗑️ Delete User\n\n{user_list}\n\nPlease enter the ID of the user you want to delete:\n\n(Type /cancel to abort)"
+    )
+    
+    return "WAITING_USER_ID"
+
+def process_delete_user_id(update: Update, context: CallbackContext) -> int:
+    """Process the user ID for deletion."""
+    user_id_text = update.message.text.strip()
+    
+    try:
+        user_id = int(user_id_text)
+    except ValueError:
+        update.message.reply_text(
+            "❌ Error: User ID must be a number. Please try again or type /cancel to abort."
+        )
+        return "WAITING_USER_ID"
+    
+    # Check if the user exists
+    user = database.get_user(user_id)
+    if not user:
+        update.message.reply_text(
+            "❌ Error: User not found. Please try again or type /cancel to abort."
+        )
+        return "WAITING_USER_ID"
+    
+    # Get the user's name safely
+    name = user.get('first_name', '')
+    if user.get('last_name'):
+        name += f" {user.get('last_name')}"
+    
+    # Send confirmation button
+    keyboard = [
+        [InlineKeyboardButton("✅ Yes, Delete", callback_data=f"confirm_delete_user_{user_id}")],
+        [InlineKeyboardButton("❌ No, Cancel", callback_data="admin_user_management")]
+    ]
+    
+    update.message.reply_text(
+        f"⚠️ Delete User Confirmation\n\n"
+        f"Are you sure you want to delete the user {name} (ID: {user_id})?\n\n"
+        f"This will permanently delete the user and all their attendance records.",
+        reply_markup=InlineKeyboardMarkup(keyboard)
+    )
+    
+    return ConversationHandler.END
+
+# Clear attendance conversation handlers
+def start_clear_attendance(update: Update, context: CallbackContext) -> int:
+    """Start the clear attendance conversation."""
+    query = update.callback_query
+    query.answer()
+    
+    # Show all users to help admin choose
+    users = database.get_all_users()
+    user_list = "👥 Available Users:\n\n"
+    
+    for user in users:
+        name = user.get('first_name', '')
+        if user.get('last_name'):
+            name += f" {user.get('last_name')}"
+        username = f"@{user.get('username')}" if user.get('username') else "No username"
+        user_list += f"ID: {user.get('user_id')} - {name} ({username})\n"
+    
+    query.edit_message_text(
+        f"🧹 Clear Attendance\n\n{user_list}\n\nPlease enter the ID of the user whose attendance records you want to clear:\n\n(Type /cancel to abort)"
+    )
+    
+    return "WAITING_USER_ID"
+
+def process_clear_attendance_id(update: Update, context: CallbackContext) -> int:
+    """Process the user ID for clearing attendance."""
+    user_id_text = update.message.text.strip()
+    
+    try:
+        user_id = int(user_id_text)
+    except ValueError:
+        update.message.reply_text(
+            "❌ Error: User ID must be a number. Please try again or type /cancel to abort."
+        )
+        return "WAITING_USER_ID"
+    
+    # Check if the user exists
+    user = database.get_user(user_id)
+    if not user:
+        update.message.reply_text(
+            "❌ Error: User not found. Please try again or type /cancel to abort."
+        )
+        return "WAITING_USER_ID"
+    
+    # Get the user's name safely
+    name = user.get('first_name', '')
+    if user.get('last_name'):
+        name += f" {user.get('last_name')}"
+    
+    # Show recent attendance records
+    history = database.get_user_history(user_id, limit=5)
+    history_text = ""
+    
+    if history:
+        history_text = "\n\nRecent attendance records:\n"
+        for record in history:
+            try:
+                date_str = record.get("date").strftime("%Y-%m-%d")
+                check_in = record.get("check_in", "N/A")
+                check_out = record.get("check_out", "N/A")
+                
+                check_in_str = "N/A"
+                if check_in != "N/A" and check_in is not None:
+                    check_in_str = check_in.strftime("%H:%M:%S") if hasattr(check_in, "strftime") else str(check_in)
+                
+                check_out_str = "N/A"
+                if check_out != "N/A" and check_out is not None:
+                    check_out_str = check_out.strftime("%H:%M:%S") if hasattr(check_out, "strftime") else str(check_out)
+                
+                history_text += f"{date_str}: {check_in_str} → {check_out_str}\n"
+            except Exception:
+                continue
+    
+    # Send confirmation button
+    keyboard = [
+        [InlineKeyboardButton("✅ Yes, Clear All", callback_data=f"confirm_clear_attendance_{user_id}")],
+        [InlineKeyboardButton("❌ No, Cancel", callback_data="admin_user_management")]
+    ]
+    
+    update.message.reply_text(
+        f"⚠️ Clear Attendance Confirmation\n\n"
+        f"Are you sure you want to clear all attendance records for {name} (ID: {user_id})?\n\n"
+        f"This will permanently delete all attendance history for this user.{history_text}",
+        reply_markup=InlineKeyboardMarkup(keyboard)
+    )
+    
+    return ConversationHandler.END
+
+# User details conversation handlers
+def start_user_details(update: Update, context: CallbackContext) -> int:
+    """Start the user details conversation."""
+    query = update.callback_query
+    query.answer()
+    
+    # Show all users to help admin choose
+    users = database.get_all_users()
+    user_list = "👥 Available Users:\n\n"
+    
+    for user in users:
+        name = user.get('first_name', '')
+        if user.get('last_name'):
+            name += f" {user.get('last_name')}"
+        username = f"@{user.get('username')}" if user.get('username') else "No username"
+        user_list += f"ID: {user.get('user_id')} - {name} ({username})\n"
+    
+    query.edit_message_text(
+        f"👤 User Details\n\n{user_list}\n\nPlease enter the ID of the user whose details you want to view:\n\n(Type /cancel to abort)"
+    )
+    
+    return "WAITING_USER_ID"
+
+def process_user_details_id(update: Update, context: CallbackContext) -> int:
+    """Process the user ID for viewing details."""
+    user_id_text = update.message.text.strip()
+    
+    try:
+        user_id = int(user_id_text)
+    except ValueError:
+        update.message.reply_text(
+            "❌ Error: User ID must be a number. Please try again or type /cancel to abort."
+        )
+        return "WAITING_USER_ID"
+    
+    # Check if the user exists
+    user = database.get_user(user_id)
+    if not user:
+        update.message.reply_text(
+            "❌ Error: User not found. Please try again or type /cancel to abort."
+        )
+        return "WAITING_USER_ID"
+    
+    # Get user details
+    first_name = user.get('first_name', '')
+    last_name = user.get('last_name', '')
+    name = first_name
+    if last_name:
+        name += f" {last_name}"
+    
+    username = f"@{user.get('username')}" if user.get('username') else "No username"
+    admin_status = "Admin" if user.get("is_admin", False) else "Worker"
+    
+    # Get registration date
+    created_at = "Unknown"
+    if user.get('created_at'):
+        try:
+            created_at = user.get('created_at').strftime('%Y-%m-%d %H:%M:%S')
+        except Exception:
+            created_at = str(user.get('created_at'))
+    
+    # Get user history
+    history = database.get_user_history(user_id, limit=10)
+    history_text = ""
+    
+    if history:
+        history_text = "\n\nRecent Attendance:\n"
+        for record in history:
+            try:
+                date_str = record.get("date").strftime("%Y-%m-%d")
+                check_in = record.get("check_in", "N/A")
+                check_out = record.get("check_out", "N/A")
+                duration = record.get("duration", "N/A")
+                
+                check_in_str = "N/A"
+                if check_in != "N/A" and check_in is not None:
+                    check_in_str = check_in.strftime("%H:%M:%S") if hasattr(check_in, "strftime") else str(check_in)
+                
+                check_out_str = "N/A"
+                if check_out != "N/A" and check_out is not None:
+                    check_out_str = check_out.strftime("%H:%M:%S") if hasattr(check_out, "strftime") else str(check_out)
+                
+                history_text += f"• {date_str}: {check_in_str} → {check_out_str} ({duration} hours)\n"
+            except Exception:
+                continue
+    else:
+        history_text = "\n\nNo attendance records found."
+    
+    # Build message
+    message = f"👤 User Details\n\n"
+    message += f"ID: {user_id}\n"
+    message += f"Name: {name}\n"
+    message += f"Username: {username}\n"
+    message += f"Role: {admin_status}\n"
+    message += f"Registered: {created_at}\n"
+    message += history_text
+    
+    # Add admin action buttons
+    keyboard = [
+        [
+            InlineKeyboardButton("🗑️ Delete User", callback_data=f"delete_user_{user_id}"),
+            InlineKeyboardButton("🧹 Clear Attendance", callback_data=f"clear_attendance_{user_id}")
+        ],
+        [InlineKeyboardButton("📅 Delete Specific Date", callback_data=f"prompt_delete_attendance")],
+        [InlineKeyboardButton("🔙 Back", callback_data="admin_user_management")]
+    ]
+    
+    update.message.reply_text(
+        message,
+        reply_markup=InlineKeyboardMarkup(keyboard)
+    )
+    
+    return ConversationHandler.END
+
+# Delete specific attendance conversation handlers
+def start_delete_attendance(update: Update, context: CallbackContext) -> int:
+    """Start the delete specific attendance conversation."""
+    query = update.callback_query
+    query.answer()
+    
+    # Show all users to help admin choose
+    users = database.get_all_users()
+    user_list = "👥 Available Users:\n\n"
+    
+    for user in users:
+        name = user.get('first_name', '')
+        if user.get('last_name'):
+            name += f" {user.get('last_name')}"
+        username = f"@{user.get('username')}" if user.get('username') else "No username"
+        user_list += f"ID: {user.get('user_id')} - {name} ({username})\n"
+    
+    query.edit_message_text(
+        f"📅 Delete Attendance Record\n\n{user_list}\n\nPlease enter the ID of the user whose attendance record you want to delete:\n\n(Type /cancel to abort)"
+    )
+    
+    return "WAITING_USER_ID"
+
+def process_delete_attendance_user_id(update: Update, context: CallbackContext) -> int:
+    """Process the user ID for deleting specific attendance."""
+    user_id_text = update.message.text.strip()
+    
+    try:
+        user_id = int(user_id_text)
+    except ValueError:
+        update.message.reply_text(
+            "❌ Error: User ID must be a number. Please try again or type /cancel to abort."
+        )
+        return "WAITING_USER_ID"
+    
+    # Check if the user exists
+    user = database.get_user(user_id)
+    if not user:
+        update.message.reply_text(
+            "❌ Error: User not found. Please try again or type /cancel to abort."
+        )
+        return "WAITING_USER_ID"
+    
+    # Store the user ID in context
+    context.user_data['target_user_id'] = user_id
+    
+    # Get the user's name safely
+    name = user.get('first_name', '')
+    if user.get('last_name'):
+        name += f" {user.get('last_name')}"
+    context.user_data['target_user_name'] = name
+    
+    # Show recent attendance records
+    history = database.get_user_history(user_id, limit=10)
+    history_text = ""
+    
+    if history:
+        history_text = "\nAttendance records:\n"
+        for record in history:
+            try:
+                date_str = record.get("date").strftime("%Y-%m-%d")
+                check_in = record.get("check_in", "N/A")
+                check_out = record.get("check_out", "N/A")
+                
+                check_in_str = "N/A"
+                if check_in != "N/A" and check_in is not None:
+                    check_in_str = check_in.strftime("%H:%M:%S") if hasattr(check_in, "strftime") else str(check_in)
+                
+                check_out_str = "N/A"
+                if check_out != "N/A" and check_out is not None:
+                    check_out_str = check_out.strftime("%H:%M:%S") if hasattr(check_out, "strftime") else str(check_out)
+                
+                history_text += f"• {date_str}: {check_in_str} → {check_out_str}\n"
+            except Exception:
+                continue
+    else:
+        history_text = "\nNo attendance records found."
+    
+    update.message.reply_text(
+        f"📅 Delete Attendance Record\n\n"
+        f"Selected user: {name} (ID: {user_id})\n{history_text}\n\n"
+        f"Please enter the date of the attendance record you want to delete (YYYY-MM-DD format):\n\n"
+        f"(Type /cancel to abort)"
+    )
+    
+    return "WAITING_DATE"
+
+def process_delete_attendance_date(update: Update, context: CallbackContext) -> int:
+    """Process the date for deleting specific attendance."""
+    date_text = update.message.text.strip()
+    user_id = context.user_data.get('target_user_id')
+    name = context.user_data.get('target_user_name')
+    
+    # Validate date format
+    try:
+        date_obj = datetime.datetime.strptime(date_text, "%Y-%m-%d")
+        date_obj = date_obj.replace(hour=0, minute=0, second=0, microsecond=0)
+    except ValueError:
+        update.message.reply_text(
+            "❌ Error: Invalid date format. Please use YYYY-MM-DD format or type /cancel to abort."
+        )
+        return "WAITING_DATE"
+    
+    # Check if there's a record for this date
+    record, message = database.get_user_history_by_date(user_id, date_obj)
+    
+    if not record:
+        update.message.reply_text(
+            f"❌ No attendance record found for {name} on {date_text}.\n\n"
+            f"Please try a different date or type /cancel to abort."
+        )
+        return "WAITING_DATE"
+    
+    # Format the record details
+    check_in = record.get("check_in", "N/A")
+    check_out = record.get("check_out", "N/A")
+    
+    check_in_str = "N/A"
+    if check_in != "N/A" and check_in is not None:
+        check_in_str = check_in.strftime("%H:%M:%S") if hasattr(check_in, "strftime") else str(check_in)
+    
+    check_out_str = "N/A"
+    if check_out != "N/A" and check_out is not None:
+        check_out_str = check_out.strftime("%H:%M:%S") if hasattr(check_out, "strftime") else str(check_out)
+    
+    record_details = f"Date: {date_text}\nCheck-in: {check_in_str}\nCheck-out: {check_out_str}"
+    
+    # Create keyboard for confirmation
+    keyboard = [
+        [InlineKeyboardButton("✅ Yes, Delete", callback_data=f"confirm_delete_record_{user_id}_{date_text}")],
+        [InlineKeyboardButton("❌ No, Cancel", callback_data="admin_user_management")]
+    ]
+    
+    update.message.reply_text(
+        f"⚠️ Delete Attendance Record Confirmation\n\n"
+        f"Are you sure you want to delete the following attendance record for {name}?\n\n"
+        f"{record_details}\n\n"
+        f"This action cannot be undone.",
+        reply_markup=InlineKeyboardMarkup(keyboard)
+    )
+    
+    return ConversationHandler.END
+
 def main() -> None:
     """Start the bot."""
     global reminder_scheduler
@@ -490,6 +900,54 @@ def main() -> None:
     
     # Get the dispatcher to register handlers
     dispatcher = updater.dispatcher
+    
+    # Add conversation handlers for admin options (MUST BE REGISTERED FIRST for higher priority)
+    # User deletion conversation
+    delete_user_conv_handler = ConversationHandler(
+        entry_points=[CallbackQueryHandler(start_delete_user, pattern='^prompt_delete_user$')],
+        states={
+            'WAITING_USER_ID': [MessageHandler(Filters.text & ~Filters.command, process_delete_user_id)],
+        },
+        fallbacks=[CommandHandler('cancel', cancel_admin_conversation)],
+        allow_reentry=True
+    )
+    
+    # Clear attendance conversation
+    clear_attendance_conv_handler = ConversationHandler(
+        entry_points=[CallbackQueryHandler(start_clear_attendance, pattern='^prompt_clear_attendance$')],
+        states={
+            'WAITING_USER_ID': [MessageHandler(Filters.text & ~Filters.command, process_clear_attendance_id)],
+        },
+        fallbacks=[CommandHandler('cancel', cancel_admin_conversation)],
+        allow_reentry=True
+    )
+    
+    # User details conversation
+    user_details_conv_handler = ConversationHandler(
+        entry_points=[CallbackQueryHandler(start_user_details, pattern='^prompt_user_details$')],
+        states={
+            'WAITING_USER_ID': [MessageHandler(Filters.text & ~Filters.command, process_user_details_id)],
+        },
+        fallbacks=[CommandHandler('cancel', cancel_admin_conversation)],
+        allow_reentry=True
+    )
+    
+    # Delete specific attendance conversation
+    delete_attendance_conv_handler = ConversationHandler(
+        entry_points=[CallbackQueryHandler(start_delete_attendance, pattern='^prompt_delete_attendance$')],
+        states={
+            'WAITING_USER_ID': [MessageHandler(Filters.text & ~Filters.command, process_delete_attendance_user_id)],
+            'WAITING_DATE': [MessageHandler(Filters.text & ~Filters.command, process_delete_attendance_date)],
+        },
+        fallbacks=[CommandHandler('cancel', cancel_admin_conversation)],
+        allow_reentry=True
+    )
+    
+    # Register the conversation handlers (before the other handlers for priority)
+    dispatcher.add_handler(delete_user_conv_handler)
+    dispatcher.add_handler(clear_attendance_conv_handler)
+    dispatcher.add_handler(user_details_conv_handler)
+    dispatcher.add_handler(delete_attendance_conv_handler)
     
     # Register command handlers
     dispatcher.add_handler(CommandHandler("start", start_command))
@@ -513,6 +971,7 @@ def main() -> None:
     dispatcher.add_handler(CommandHandler("deleterecord", delete_record_command))
     dispatcher.add_handler(CommandHandler("clearattendance", clear_attendance_command))
     dispatcher.add_handler(CommandHandler("userdetails", user_details_command))
+    dispatcher.add_handler(CommandHandler("deleteattendance", delete_attendance_command))
     
     # Register callback query handlers
     dispatcher.add_handler(CallbackQueryHandler(interface_callback_handler, pattern="^show_"))

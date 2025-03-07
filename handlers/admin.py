@@ -401,40 +401,49 @@ def handle_admin_callback(update: Update, context: CallbackContext) -> None:
     # Handle user/record deletion callbacks
     try:
         if query.data.startswith("delete_user_"):
-            # Extract user ID from callback data
             try:
-                target_user_id = int(query.data.split("_")[2])
-                user = database.get_user(target_user_id)
-                
-                if not user:
+                # Extract user ID from callback data
+                parts = query.data.split("_")
+                if len(parts) >= 3:
+                    target_user_id = int(parts[2])
+                else:
                     query.edit_message_text(
-                        "❌ *Error*: User not found.",
-                        reply_markup=get_admin_menu_keyboard(),
-                        parse_mode=ParseMode.MARKDOWN
+                        "❌ Error: Invalid user ID.",
+                        reply_markup=get_admin_menu_keyboard()
                     )
                     return
                 
-                # Ask for confirmation
+                # Get the user and check if they exist
+                user = database.get_user(target_user_id)
+                if not user:
+                    query.edit_message_text(
+                        "❌ Error: User not found.",
+                        reply_markup=get_admin_menu_keyboard()
+                    )
+                    return
+                
+                # Get the user's name safely
+                name = user.get('first_name', '')
+                if user.get('last_name'):
+                    name += f" {user.get('last_name')}"
+                
+                # Create confirmation keyboard
                 keyboard = [
-                    [
-                        InlineKeyboardButton("✅ Yes, Delete", callback_data=f"confirm_delete_user_{target_user_id}"),
-                        InlineKeyboardButton("❌ No, Cancel", callback_data="admin_users")
-                    ]
+                    [InlineKeyboardButton("✅ Yes, Delete", callback_data=f"confirm_delete_user_{target_user_id}")],
+                    [InlineKeyboardButton("❌ No, Cancel", callback_data="admin_user_management")]
                 ]
                 
                 query.edit_message_text(
-                    f"⚠️ *Confirm User Deletion*\n\n"
-                    f"Are you sure you want to delete the user *{user['first_name']}* (ID: `{target_user_id}`)?\n\n"
+                    f"⚠️ Delete User Confirmation\n\n"
+                    f"Are you sure you want to delete the user {name} (ID: {target_user_id})?\n\n"
                     f"This will permanently delete the user and all their attendance records.",
-                    reply_markup=InlineKeyboardMarkup(keyboard),
-                    parse_mode=ParseMode.MARKDOWN
+                    reply_markup=InlineKeyboardMarkup(keyboard)
                 )
             except Exception as e:
-                logging.error(f"Error in delete_user callback: {e}")
+                logging.error(f"Error preparing delete user confirmation: {e}")
                 query.edit_message_text(
-                    "❌ *Error*: Invalid user ID.",
-                    reply_markup=get_admin_menu_keyboard(),
-                    parse_mode=ParseMode.MARKDOWN
+                    "❌ Error: Failed to prepare confirmation.",
+                    reply_markup=get_admin_menu_keyboard()
                 )
         
         elif query.data.startswith("confirm_delete_user_"):
@@ -463,40 +472,73 @@ def handle_admin_callback(update: Update, context: CallbackContext) -> None:
                 )
         
         elif query.data.startswith("clear_attendance_"):
-            # Extract user ID from callback data
             try:
-                target_user_id = int(query.data.split("_")[2])
-                user = database.get_user(target_user_id)
-                
-                if not user:
+                # Extract user ID from callback data
+                parts = query.data.split("_")
+                if len(parts) >= 3:
+                    target_user_id = int(parts[2])
+                else:
                     query.edit_message_text(
-                        "❌ *Error*: User not found.",
-                        reply_markup=get_admin_menu_keyboard(),
-                        parse_mode=ParseMode.MARKDOWN
+                        "❌ Error: Invalid user ID.",
+                        reply_markup=get_admin_menu_keyboard()
                     )
                     return
                 
-                # Ask for confirmation
+                # Get the user and check if they exist
+                user = database.get_user(target_user_id)
+                if not user:
+                    query.edit_message_text(
+                        "❌ Error: User not found.",
+                        reply_markup=get_admin_menu_keyboard()
+                    )
+                    return
+                
+                # Get the user's name safely
+                name = user.get('first_name', '')
+                if user.get('last_name'):
+                    name += f" {user.get('last_name')}"
+                
+                # Show recent attendance records
+                history = database.get_user_history(target_user_id, limit=5)
+                history_text = ""
+                
+                if history:
+                    history_text = "\n\nRecent attendance records:\n"
+                    for record in history:
+                        try:
+                            date_str = record.get("date").strftime("%Y-%m-%d")
+                            check_in = record.get("check_in", "N/A")
+                            check_out = record.get("check_out", "N/A")
+                            
+                            check_in_str = "N/A"
+                            if check_in != "N/A" and check_in is not None:
+                                check_in_str = check_in.strftime("%H:%M:%S") if hasattr(check_in, "strftime") else str(check_in)
+                            
+                            check_out_str = "N/A"
+                            if check_out != "N/A" and check_out is not None:
+                                check_out_str = check_out.strftime("%H:%M:%S") if hasattr(check_out, "strftime") else str(check_out)
+                            
+                            history_text += f"{date_str}: {check_in_str} → {check_out_str}\n"
+                        except Exception:
+                            continue
+                
+                # Create confirmation keyboard
                 keyboard = [
-                    [
-                        InlineKeyboardButton("✅ Yes, Clear All", callback_data=f"confirm_clear_attendance_{target_user_id}"),
-                        InlineKeyboardButton("❌ No, Cancel", callback_data=f"userdetails_{target_user_id}")
-                    ]
+                    [InlineKeyboardButton("✅ Yes, Clear All", callback_data=f"confirm_clear_attendance_{target_user_id}")],
+                    [InlineKeyboardButton("❌ No, Cancel", callback_data="admin_user_management")]
                 ]
                 
                 query.edit_message_text(
-                    f"⚠️ *Confirm Attendance Clearing*\n\n"
-                    f"Are you sure you want to clear all attendance records for *{user['first_name']}* (ID: `{target_user_id}`)?\n\n"
-                    f"This will permanently delete all attendance history for this user.",
-                    reply_markup=InlineKeyboardMarkup(keyboard),
-                    parse_mode=ParseMode.MARKDOWN
+                    f"⚠️ Clear Attendance Confirmation\n\n"
+                    f"Are you sure you want to clear all attendance records for {name} (ID: {target_user_id})?\n\n"
+                    f"This will permanently delete all attendance history for this user.{history_text}",
+                    reply_markup=InlineKeyboardMarkup(keyboard)
                 )
             except Exception as e:
-                logging.error(f"Error in clear_attendance callback: {e}")
+                logging.error(f"Error preparing clear attendance confirmation: {e}")
                 query.edit_message_text(
-                    "❌ *Error*: Invalid user ID.",
-                    reply_markup=get_admin_menu_keyboard(),
-                    parse_mode=ParseMode.MARKDOWN
+                    "❌ Error: Failed to prepare confirmation.",
+                    reply_markup=get_admin_menu_keyboard()
                 )
         
         elif query.data.startswith("confirm_clear_attendance_"):
@@ -617,6 +659,7 @@ def handle_admin_callback(update: Update, context: CallbackContext) -> None:
                         InlineKeyboardButton("🗑️ Delete User", callback_data=f"delete_user_{target_user_id}"),
                         InlineKeyboardButton("🧹 Clear Attendance", callback_data=f"clear_attendance_{target_user_id}")
                     ],
+                    [InlineKeyboardButton("📅 Delete Specific Date", callback_data=f"delete_specific_date_{target_user_id}")],
                     [InlineKeyboardButton("🔙 Back", callback_data="admin_users")]
                 ]
                 
@@ -641,7 +684,10 @@ def handle_admin_callback(update: Update, context: CallbackContext) -> None:
                     InlineKeyboardButton("🗑️ Delete User", callback_data="prompt_delete_user"),
                     InlineKeyboardButton("🧹 Clear Attendance", callback_data="prompt_clear_attendance")
                 ],
-                [InlineKeyboardButton("👤 User Details", callback_data="prompt_user_details")],
+                [
+                    InlineKeyboardButton("👤 User Details", callback_data="prompt_user_details"),
+                    InlineKeyboardButton("📅 Delete Attendance", callback_data="prompt_delete_attendance")
+                ],
                 [InlineKeyboardButton("🔙 Back", callback_data="admin_menu")]
             ]
             
@@ -726,6 +772,236 @@ def handle_admin_callback(update: Update, context: CallbackContext) -> None:
                          "/userdetails USER_ID\n\n"
                          "Replace USER_ID with the ID of the user whose details you want to view.",
                     reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 Back", callback_data="admin_user_management")]])
+                )
+        
+        elif query.data == "prompt_delete_attendance":
+            # Show a prompt to enter user ID
+            try:
+                query.edit_message_text(
+                    "📅 Delete Attendance\n\n"
+                    "Please use the command:\n"
+                    "/deleteattendance USER_ID YYYY-MM-DD\n\n"
+                    "Replace USER_ID with the ID of the user whose attendance record you want to delete.\n"
+                    "Replace YYYY-MM-DD with the date of the attendance record you want to delete.",
+                    reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 Back", callback_data="admin_user_management")]])
+                )
+            except Exception as e:
+                # If editing fails, send a new message
+                logging.error(f"Error editing message: {e}")
+                context.bot.send_message(
+                    chat_id=user_id,
+                    text="📅 Delete Attendance\n\n"
+                         "Please use the command:\n"
+                         "/deleteattendance USER_ID YYYY-MM-DD\n\n"
+                         "Replace USER_ID with the ID of the user whose attendance record you want to delete.\n"
+                         "Replace YYYY-MM-DD with the date of the attendance record you want to delete.",
+                    reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 Back", callback_data="admin_user_management")]])
+                )
+        
+        elif query.data.startswith("confirm_delete_record_"):
+            # Extract user ID and date from callback data
+            try:
+                parts = query.data.split("_")
+                target_user_id = int(parts[3])
+                date_str = parts[4]
+                
+                # Format the date string as a date object
+                date_obj = datetime.datetime.strptime(date_str, "%Y-%m-%d")
+                date_obj = date_obj.replace(hour=0, minute=0, second=0, microsecond=0)
+                
+                # Get the user
+                user = database.get_user(target_user_id)
+                if not user:
+                    query.edit_message_text(
+                        "❌ Error: User not found.",
+                        reply_markup=get_admin_menu_keyboard()
+                    )
+                    return
+                
+                # Get the user's name safely
+                name = user.get('first_name', '')
+                if user.get('last_name'):
+                    name += f" {user.get('last_name')}"
+                
+                # Delete the attendance record
+                success, message = database.delete_attendance_record(target_user_id, date_obj)
+                
+                if success:
+                    query.edit_message_text(
+                        f"✅ Success: {message}",
+                        reply_markup=get_admin_menu_keyboard()
+                    )
+                else:
+                    query.edit_message_text(
+                        f"❌ Error: {message}",
+                        reply_markup=get_admin_menu_keyboard()
+                    )
+            except Exception as e:
+                logging.error(f"Error deleting attendance record: {e}")
+                query.edit_message_text(
+                    "❌ Error: Failed to delete attendance record.",
+                    reply_markup=get_admin_menu_keyboard()
+                )
+        
+        elif query.data.startswith("delete_specific_date_"):
+            try:
+                # Extract user ID from callback data
+                parts = query.data.split("_")
+                if len(parts) >= 4:
+                    target_user_id = int(parts[3])
+                else:
+                    query.edit_message_text(
+                        "❌ Error: Invalid user ID.",
+                        reply_markup=get_admin_menu_keyboard()
+                    )
+                    return
+                
+                # Get the user and check if they exist
+                user = database.get_user(target_user_id)
+                if not user:
+                    query.edit_message_text(
+                        "❌ Error: User not found.",
+                        reply_markup=get_admin_menu_keyboard()
+                    )
+                    return
+                
+                # Get the user's name safely
+                name = user.get('first_name', '')
+                if user.get('last_name'):
+                    name += f" {user.get('last_name')}"
+                
+                # Show recent attendance records to help admin choose a date
+                history = database.get_user_history(target_user_id, limit=10)
+                history_text = ""
+                
+                if history:
+                    history_text = "\nRecent attendance records:\n"
+                    for record in history:
+                        try:
+                            date_str = record.get("date").strftime("%Y-%m-%d")
+                            check_in = record.get("check_in", "N/A")
+                            check_out = record.get("check_out", "N/A")
+                            
+                            check_in_str = "N/A"
+                            if check_in != "N/A" and check_in is not None:
+                                check_in_str = check_in.strftime("%H:%M:%S") if hasattr(check_in, "strftime") else str(check_in)
+                            
+                            check_out_str = "N/A"
+                            if check_out != "N/A" and check_out is not None:
+                                check_out_str = check_out.strftime("%H:%M:%S") if hasattr(check_out, "strftime") else str(check_out)
+                            
+                            # Generate a quick delete button for this date
+                            history_text += f"{date_str}: {check_in_str} → {check_out_str}\n"
+                        except Exception:
+                            continue
+                    
+                    # Create a keyboard with direct date options
+                    keyboard = []
+                    date_buttons = []
+                    
+                    # Add up to 5 most recent dates as buttons
+                    for i, record in enumerate(history[:5]):
+                        try:
+                            date_str = record.get("date").strftime("%Y-%m-%d")
+                            date_buttons.append(
+                                InlineKeyboardButton(date_str, callback_data=f"prepare_delete_record_{target_user_id}_{date_str}")
+                            )
+                            
+                            # Add 2 buttons per row
+                            if len(date_buttons) == 2 or i == len(history[:5]) - 1:
+                                keyboard.append(date_buttons)
+                                date_buttons = []
+                        except Exception:
+                            continue
+                    
+                    # Add back button
+                    keyboard.append([InlineKeyboardButton("🔙 Back", callback_data="admin_user_management")])
+                    
+                    query.edit_message_text(
+                        f"📅 Delete Attendance Record\n\n"
+                        f"Select a date to delete attendance record for {name} (ID: {target_user_id}):\n"
+                        f"{history_text}",
+                        reply_markup=InlineKeyboardMarkup(keyboard)
+                    )
+                else:
+                    query.edit_message_text(
+                        f"❌ No attendance records found for {name}.",
+                        reply_markup=get_admin_menu_keyboard()
+                    )
+            except Exception as e:
+                logging.error(f"Error preparing date selection: {e}")
+                query.edit_message_text(
+                    "❌ Error: Failed to prepare date selection.",
+                    reply_markup=get_admin_menu_keyboard()
+                )
+        
+        elif query.data.startswith("prepare_delete_record_"):
+            try:
+                # Extract user ID and date from callback data
+                parts = query.data.split("_")
+                target_user_id = int(parts[3])
+                date_str = parts[4]
+                
+                # Format the date string as a date object
+                date_obj = datetime.datetime.strptime(date_str, "%Y-%m-%d")
+                date_obj = date_obj.replace(hour=0, minute=0, second=0, microsecond=0)
+                
+                # Get the user
+                user = database.get_user(target_user_id)
+                if not user:
+                    query.edit_message_text(
+                        "❌ Error: User not found.",
+                        reply_markup=get_admin_menu_keyboard()
+                    )
+                    return
+                
+                # Get the user's name safely
+                name = user.get('first_name', '')
+                if user.get('last_name'):
+                    name += f" {user.get('last_name')}"
+                
+                # Get record details for the date
+                record, message = database.get_user_history_by_date(target_user_id, date_obj)
+                
+                if not record:
+                    query.edit_message_text(
+                        f"❌ No attendance record found for {name} on {date_str}.",
+                        reply_markup=get_admin_menu_keyboard()
+                    )
+                    return
+                
+                # Format the record details
+                check_in = record.get("check_in", "N/A")
+                check_out = record.get("check_out", "N/A")
+                
+                check_in_str = "N/A"
+                if check_in != "N/A" and check_in is not None:
+                    check_in_str = check_in.strftime("%H:%M:%S") if hasattr(check_in, "strftime") else str(check_in)
+                
+                check_out_str = "N/A"
+                if check_out != "N/A" and check_out is not None:
+                    check_out_str = check_out.strftime("%H:%M:%S") if hasattr(check_out, "strftime") else str(check_out)
+                
+                record_details = f"Date: {date_str}\nCheck-in: {check_in_str}\nCheck-out: {check_out_str}"
+                
+                # Create keyboard for confirmation
+                keyboard = [
+                    [InlineKeyboardButton("✅ Yes, Delete", callback_data=f"confirm_delete_record_{target_user_id}_{date_str}")],
+                    [InlineKeyboardButton("❌ No, Cancel", callback_data="admin_user_management")]
+                ]
+                
+                query.edit_message_text(
+                    f"⚠️ Delete Attendance Record Confirmation\n\n"
+                    f"Are you sure you want to delete the following attendance record for {name}?\n\n"
+                    f"{record_details}\n\n"
+                    f"This action cannot be undone.",
+                    reply_markup=InlineKeyboardMarkup(keyboard)
+                )
+            except Exception as e:
+                logging.error(f"Error preparing record deletion: {e}")
+                query.edit_message_text(
+                    "❌ Error: Failed to prepare record deletion.",
+                    reply_markup=get_admin_menu_keyboard()
                 )
         
         # Default admin menu handlers
@@ -1400,11 +1676,92 @@ def user_details_command(update: Update, context: CallbackContext) -> None:
             InlineKeyboardButton("🗑️ Delete User", callback_data=f"delete_user_{user_id}"),
             InlineKeyboardButton("🧹 Clear Attendance", callback_data=f"clear_attendance_{user_id}")
         ],
-        [InlineKeyboardButton("🔙 Back", callback_data="admin_users")]
+        [InlineKeyboardButton("📅 Delete Specific Date", callback_data=f"delete_specific_date_{user_id}")],
+        [InlineKeyboardButton("🔙 Back", callback_data="admin_user_management")]
     ]
     
     update.message.reply_text(
         message,
         reply_markup=InlineKeyboardMarkup(keyboard),
         parse_mode=ParseMode.MARKDOWN
+    )
+
+@admin_required
+def delete_attendance_command(update: Update, context: CallbackContext) -> None:
+    """Handler for the /deleteattendance command."""
+    args = context.args
+    
+    if not args or len(args) < 2:
+        update.message.reply_text(
+            "❌ Error: You must provide a user ID and date.\n\n"
+            "Usage: /deleteattendance USER_ID YYYY-MM-DD",
+            reply_markup=get_admin_menu_keyboard()
+        )
+        return
+    
+    # Try to get the user ID and date from the arguments
+    try:
+        user_id = int(args[0])
+        date_str = args[1]
+        
+        # Format the date string as a date object
+        date_obj = datetime.datetime.strptime(date_str, "%Y-%m-%d")
+        date_obj = date_obj.replace(hour=0, minute=0, second=0, microsecond=0)
+    except ValueError:
+        update.message.reply_text(
+            "❌ Error: Invalid format. User ID must be a number and date must be in YYYY-MM-DD format.",
+            reply_markup=get_admin_menu_keyboard()
+        )
+        return
+    
+    # Check if the user exists
+    user = database.get_user(user_id)
+    if not user:
+        update.message.reply_text(
+            "❌ Error: User not found.",
+            reply_markup=get_admin_menu_keyboard()
+        )
+        return
+    
+    # Get the user's name safely
+    name = user.get('first_name', '')
+    if user.get('last_name'):
+        name += f" {user.get('last_name')}"
+    
+    # Check if there's a record for this date
+    record, message = database.get_user_history_by_date(user_id, date_obj)
+    
+    if not record:
+        update.message.reply_text(
+            f"❌ No attendance record found for {name} on {date_str}.",
+            reply_markup=get_admin_menu_keyboard()
+        )
+        return
+    
+    # Format the record details
+    check_in = record.get("check_in", "N/A")
+    check_out = record.get("check_out", "N/A")
+    
+    check_in_str = "N/A"
+    if check_in != "N/A" and check_in is not None:
+        check_in_str = check_in.strftime("%H:%M:%S") if hasattr(check_in, "strftime") else str(check_in)
+    
+    check_out_str = "N/A"
+    if check_out != "N/A" and check_out is not None:
+        check_out_str = check_out.strftime("%H:%M:%S") if hasattr(check_out, "strftime") else str(check_out)
+    
+    record_details = f"Date: {date_str}\nCheck-in: {check_in_str}\nCheck-out: {check_out_str}"
+    
+    # Create keyboard for confirmation
+    keyboard = [
+        [InlineKeyboardButton("✅ Yes, Delete", callback_data=f"confirm_delete_record_{user_id}_{date_str}")],
+        [InlineKeyboardButton("❌ No, Cancel", callback_data="admin_user_management")]
+    ]
+    
+    update.message.reply_text(
+        f"⚠️ Delete Attendance Record Confirmation\n\n"
+        f"Are you sure you want to delete the following attendance record for {name}?\n\n"
+        f"{record_details}\n\n"
+        f"This action cannot be undone.",
+        reply_markup=InlineKeyboardMarkup(keyboard)
     ) 
